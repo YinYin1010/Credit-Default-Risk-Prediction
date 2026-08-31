@@ -1,5 +1,3 @@
-# Credit-Default-Risk-Prediction
-
 # Explainable and Cost-Sensitive Credit Default Risk Prediction
 
 An end-to-end machine-learning project for credit-default prediction using the **UCI Credit Card Default** and **German Credit (Statlog)** datasets. The project combines dataset-specific exploratory analysis, feature engineering, model tuning, probability calibration, cost-sensitive threshold selection, SHAP explanations, methodological replication, reproducibility artefacts, and a Streamlit prediction prototype.
