@@ -1,361 +1,135 @@
-# Explainable and Cost-Sensitive Credit Default Risk Prediction
+# Explainable Credit Card Default Prediction
 
-An end-to-end machine-learning project for credit-default prediction using the **UCI Credit Card Default** and **German Credit (Statlog)** datasets. The project combines dataset-specific exploratory analysis, feature engineering, model tuning, probability calibration, cost-sensitive threshold selection, SHAP explanations, methodological replication, reproducibility artefacts, and a Streamlit prediction prototype.
+**Machine learning and deep learning comparison with SHAP explanations, local LLM narration, and a Streamlit research demo**
 
-> **Research use only:** This project is an academic prototype and must not be used as the sole basis for real lending decisions.
+This project estimates the probability that a credit card client will default on payment in the following month. It compares conventional machine learning with neural models, examines the effect of probability calibration and decision thresholds, and translates selected SHAP attributions into plain-language explanations. The analysis uses only the UCI Default of Credit Card Clients dataset.
 
-## Project overview
+> **Research use only.** The dataset describes historical clients in Taiwan in 2005. The model is a portfolio demonstration and must not be used to approve, deny, price, or otherwise make a real credit decision.
 
-Credit-risk models are often evaluated only by predictive accuracy. In practice, however, a useful lending model must also produce reliable probabilities, reflect the unequal costs of classification errors, and provide explanations that can be reviewed by human decision-makers.
+## Project background
 
-This project therefore addresses four connected questions:
+Credit default prediction is a classification problem with an important probability-estimation component. An institution may care about the ranking of clients by estimated risk, the reliability of those probabilities, and the consequences of different decision thresholds. A useful research comparison therefore requires more than a single accuracy score. It should also examine class imbalance, calibration, error tradeoffs, and whether explanations accurately reflect the fitted model.
 
-1. Which machine-learning model provides the strongest credit-risk discrimination for each dataset?
-2. Do the selected models generalise from cross-validation to unseen test data?
-3. How do probability calibration and cost-sensitive thresholds change operational decisions?
-4. Which applicant characteristics contribute most strongly to the models' predictions?
+This project extends a conventional credit-risk workflow with tabular deep learning, model-agnostic SHAP, and an optional local language model. The language model receives a restricted set of prediction and SHAP evidence. Its output is checked against that evidence before it is treated as an acceptable explanation.
 
-The project treats **UCI Credit Card as the primary behavioural-scoring experiment** and **German Credit as an independent methodological replication**. Because the datasets have different schemas, products, populations, and prediction contexts, German Credit is not used as external validation of the fitted UCI model.
+## Problem statement
 
-## Main capabilities
+Given a client's credit limit, demographics, recent repayment status, bill amounts, and payment amounts, estimate the probability of default in the next month. Compare model families under a consistent data split. Select a model using validation performance, assess it once on a held-out test set, and explain individual predictions without presenting model associations as causes.
 
-- Separate exploratory data analysis for the two credit datasets
-- Dataset validation and human-readable recoding of categorical variables
-- Dataset-specific financial and behavioural feature engineering
-- Leakage-safe preprocessing within scikit-learn pipelines
-- Stratified train/test splitting and cross-validated hyperparameter search
-- Comparison of seven machine-learning models against a Dummy baseline
-- Champion selection using mean cross-validated ROC-AUC
-- Held-out ROC, precision-recall, confusion-matrix, and calibration evaluation
-- Sigmoid probability calibration for the German Credit champion
-- Hypothetical UCI and documented German cost-sensitive analyses
-- Global and local SHAP explanations for both champion models
-- Cross-dataset comparison of model-family rankings using Kendall's tau
-- Persistent experiment outputs and a reproducibility manifest in Google Drive
-- Streamlit prototype with dataset-specific predictions and local SHAP explanations
+## Research and business questions
 
-## Datasets
+1. How do conventional classifiers compare with tabular neural models when next-month default is the target?
+2. Which model has the strongest validation precision-recall performance, and how does the selected model perform on held-out data?
+3. Does post-training probability calibration improve the selected model's Brier score on the calibration set?
+4. How do classification thresholds change the balance among precision, recall, and illustrative false-positive versus false-negative costs?
+5. Which recorded features contribute most strongly to the fitted model's predictions according to SHAP?
+6. Can a local language model describe selected SHAP evidence while preserving feature names, contribution directions, and reported probabilities?
+7. Do descriptive performance checks differ across the recorded sex and age groups in the test sample?
 
-| Dataset | Modelling context | Rows | Default rate | Raw predictors | Engineered predictors | Train/test rows |
-|---|---|---:|---:|---:|---:|---:|
-| UCI Credit Card Default | Behavioural scoring of existing cardholders | 30,000 | 22.12% | 23 | 40 | 24,000 / 6,000 |
-| German Credit (Statlog) | Application scoring of credit applicants | 1,000 | 30.00% | 20 | 27 | 800 / 200 |
+## Data
 
-### Target definitions
+The [UCI Default of Credit Card Clients dataset](https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients) contains **30,000 records** and **23 original predictors** after the client `ID` is excluded. It records credit card clients in Taiwan and covers repayment and billing information from April to September 2005. The target is `default.payment.next.month`, where `1` indicates default in the following month and `0` indicates no default. The observed default rate in this notebook is **22.12%**.
 
-- **UCI Credit Card:** `default.payment.next.month` is renamed to `default`; `1` represents default and `0` represents non-default. The identifier `ID` is removed.
-- **German Credit:** the original `credit_class` uses `1 = good` and `2 = bad`. These values are recoded as `default = 0` and `default = 1`, respectively.
+| Feature group | Variables | Role |
+| --- | --- | --- |
+| Credit and demographics | `LIMIT_BAL`, `SEX`, `EDUCATION`, `MARRIAGE`, `AGE` | Credit limit and recorded client characteristics |
+| Repayment status | `PAY_0`, `PAY_2` to `PAY_6` | Monthly repayment status, from September back to April 2005 |
+| Bill statements | `BILL_AMT1` to `BILL_AMT6` | Monthly statement balances |
+| Previous payments | `PAY_AMT1` to `PAY_AMT6` | Monthly payment amounts |
+| Outcome | `default.payment.next.month` | Next-month default indicator |
 
-The German dataset's documented cost matrix assigns a cost of **5** to a bad applicant predicted as good (false negative) and **1** to a good applicant predicted as bad (false positive).
+The notebook reports **zero missing cells** and **35 duplicate rows** in its initial quality summary. It does not automatically discard those duplicates. It removes `ID`, consolidates uncommon education and marital-status codes, and maps categorical codes to readable labels. Feature engineering adds repayment-history summaries, bill and payment aggregates, trends, utilization measures, a payment-to-bill ratio, and credit headroom. The model-ready table contains **40 predictors**.
 
-## Data preparation
+**Data source:** Yeh, I. (2009). *Default of Credit Card Clients* [Dataset]. UCI Machine Learning Repository. [https://doi.org/10.24432/C55S3H](https://doi.org/10.24432/C55S3H). The dataset is distributed under CC BY 4.0.
 
-### Cleaning
+## Study design
 
-- UCI `EDUCATION` codes `0`, `5`, and `6` are consolidated into `other_or_unknown`.
-- UCI `MARRIAGE = 0` is consolidated into `other_or_unknown`.
-- German symbolic codes are mapped to human-readable categories using the dataset documentation.
-- Targets, row counts, missing values, duplicates, and binary-class validity are checked before modelling.
+The notebook uses a stratified split with a fixed random seed of 42:
 
-### Feature engineering
+| Partition | Records | Purpose |
+| --- | ---: | --- |
+| Training | 18,000 | Fit models and tune conventional classifiers |
+| Validation | 3,000 | Compare models and select the champion |
+| Calibration | 3,000 | Fit the probability calibrator and select the F1 threshold |
+| Test | 6,000 | Report held-out performance and descriptive checks |
 
-UCI features capture payment delinquency, billing exposure, repayment behaviour, utilisation, and available credit. Examples include:
+Conventional classifiers use five-fold stratified cross-validation within the training partition and are compared on validation PR-AUC. Neural models use validation PR-AUC for training control and model comparison. They do not have the same five-fold cross-validation estimates in this notebook. The test set is used after the champion is selected. A separate test-set comparison of all fitted models is descriptive and is not used to choose the champion.
 
-- `DELAY_MONTH_COUNT`
-- `SEVERE_DELAY_MONTH_COUNT`
-- `MAX_REPAYMENT_STATUS`
-- `TOTAL_BILL_AMT`
-- `BILL_AMT_VOLATILITY`
-- `TOTAL_PAY_AMT`
-- `CURRENT_UTILIZATION`
-- `PAYMENT_TO_BILL_RATIO`
-- `CREDIT_HEADROOM`
+### Models
 
-German Credit features include:
+| Family | Implemented models |
+| --- | --- |
+| Baseline | Dummy classifier |
+| Conventional ML | Logistic regression, random forest, XGBoost, LightGBM |
+| Optional slower baselines | SVM and k-nearest neighbors, disabled by default |
+| Deep learning | MLP, tabular ResNet, FT-Transformer, 1D-CNN, TabNet |
 
-- `credit_per_month`
-- `duration_years`
-- `credit_amount_per_age`
-- `installment_burden_proxy`
-- `age_band`
-- `duration_band`
-- `credit_amount_band`
+Numerical and categorical preprocessing is fitted on training data. The notebook uses imputation, signed-log transformation and scaling where appropriate, along with categorical encoding. The neural workflow uses its own training-fitted preprocessing. After champion selection, a logistic calibrator is fitted to clipped model logits on the calibration partition. The classification threshold is chosen by calibration-set F1.
 
-### Preprocessing
+### Evaluation
 
-The data are divided using a stratified **80/20 train/test split** with `random_state=42`. Preprocessing is fitted inside each model pipeline:
+The selected model is assessed with PR-AUC, ROC-AUC, Brier score, precision, recall, F1, and Matthews correlation coefficient. The notebook also produces ROC and precision-recall curves, a calibration plot, a confusion matrix, hypothetical error-cost scenarios, and descriptive subgroup tables.
 
-- Numeric variables: median imputation and standardisation
-- Categorical variables: most-frequent imputation and one-hot encoding
-- Unknown categories at prediction time: ignored safely by the encoder
+## Results from the saved notebook run
 
-Keeping preprocessing inside the cross-validation pipeline prevents information from the validation or test data leaking into model fitting.
+**LightGBM** was selected because it had the highest validation PR-AUC, **0.5468**. XGBoost followed closely at **0.5466**, and the MLP reached **0.5434**. These small validation differences should not be interpreted as evidence of a statistically significant ranking.
 
-## Models and experimental design
+| Held-out metric for selected LightGBM model | Result |
+| --- | ---: |
+| PR-AUC | 0.5594 |
+| ROC-AUC | 0.7797 |
+| Brier score | 0.1350 |
+| Precision | 0.5414 |
+| Recall | 0.5373 |
+| F1 | 0.5393 |
+| Matthews correlation coefficient | 0.4092 |
+| Calibration-selected F1 threshold | 0.32 |
 
-The following models are evaluated independently on each dataset:
+On the **calibration partition**, the Brier score changed from **0.1693 before calibration** to **0.1307 after calibration**. The separate held-out test Brier score was **0.1350**. These values belong to different partitions and should not be interpreted as a direct before-and-after test-set comparison.
 
-1. Dummy classifier
-2. Logistic Regression
-3. Support Vector Machine
-4. K-Nearest Neighbours
-5. Multilayer Perceptron
-6. Random Forest
-7. XGBoost
-8. LightGBM
+The hypothetical cost analysis considers false-negative to false-positive cost ratios of **1:1**, **5:1**, and **10:1**. These ratios are assumptions for sensitivity analysis. The dataset does not contain actual exposure, recovery, or financial loss amounts. The sex and age tables are descriptive checks that do not establish fairness or equal treatment.
 
-The recorded experiment used:
+## Explainability and language-model evaluation
 
-- `FAST_MODE=True`
-- 3-fold stratified cross-validation
-- 8 sampled hyperparameter configurations per non-baseline model
-- Randomized search with refitting by ROC-AUC
-- A fixed random seed of 42
-- An untouched 20% holdout test set
+Permutation SHAP explains calibrated probabilities using a sample of **30 training records** as background and **60 test records** for analysis. Categorical labels are encoded for the SHAP masker and decoded before model prediction. The notebook saves a global beeswarm plot, a local waterfall plot, and mean absolute feature attributions. In the saved run, `PAY_0` had the largest mean absolute SHAP value among the raw features. SHAP describes the behavior of the fitted model relative to the chosen background. It does not establish causal effects.
 
-Setting `FAST_MODE=False` changes the notebook to 5-fold cross-validation and 25 search iterations. The numerical results below are from the recorded **fast-mode run**.
+The optional local language model is **`Qwen/Qwen2.5-1.5B-Instruct`**. Its prompt receives the estimated default probability, the comparison threshold, and three leading SHAP factors. The notebook checks generated text for the requested feature names, contribution directions, completeness, and exact displayed percentages. A deterministic template remains available without an API key or language-model inference.
 
-Alongside ROC-AUC, the notebook reports PR-AUC, accuracy, balanced accuracy, precision, recall, specificity, F1-score, Matthews correlation coefficient, Brier score, and confusion-matrix counts. The holdout test set is used for final evaluation only; it is not used to choose the champion model.
+The saved notebook evaluated **26 selected SHAP cases**. Text was generated for all 26 without generation errors, but **only 5 of 26 passed every automated check**. The direction check passed in **7 of 26** cases. Numeric agreement passed in **24 of 26**. These results limit any claim that the generated explanations are reliably grounded. Automated checks also do not replace manual review for unsupported statements or readability.
 
-## Model comparison
+## Streamlit demonstration
 
-### UCI Credit Card
+The notebook exports the champion model, preprocessing components where needed, calibrator, SHAP background, metadata, shared runtime code, and `app.py` to Google Drive. The application accepts client inputs, estimates next-month default probability, displays SHAP factors, and provides a template explanation. Local Qwen narration is optional and disabled unless `ENABLE_LOCAL_LLM=true` is set before launching Streamlit. Model weights are downloaded on first use and are not included in the exported ZIP.
 
-| Model | CV ROC-AUC | CV SD | Test ROC-AUC | Test PR-AUC |
-|---|---:|---:|---:|---:|
-| **XGBoost** | **0.7888** | 0.0045 | **0.7835** | 0.5621 |
-| LightGBM | 0.7877 | 0.0044 | 0.7840 | 0.5640 |
-| Random Forest | 0.7867 | 0.0030 | 0.7800 | 0.5613 |
-| MLP | 0.7787 | 0.0046 | 0.7745 | 0.5556 |
-| Logistic Regression | 0.7675 | 0.0054 | 0.7563 | 0.5191 |
-| SVM | 0.7643 | 0.0065 | 0.7541 | 0.4801 |
-| KNN | 0.7636 | 0.0091 | 0.7607 | 0.5209 |
-| Dummy | 0.5000 | 0.0000 | 0.5000 | 0.2212 |
+The notebook can start Streamlit and print a temporary Cloudflare preview URL. That link ends when the runtime or tunnel stops. It is a development preview, not permanent hosting. For a lasting public demo, deploy the exported bundle on a suitable Streamlit host with enough memory for any enabled local LLM.
 
-### German Credit
+## Reproduce the analysis
 
-| Model | CV ROC-AUC | CV SD | Test ROC-AUC | Test PR-AUC |
-|---|---:|---:|---:|---:|
-| **Random Forest** | **0.7973** | 0.0190 | **0.7876** | 0.6530 |
-| XGBoost | 0.7891 | 0.0255 | 0.7874 | 0.6618 |
-| LightGBM | 0.7885 | 0.0216 | 0.7975 | 0.6722 |
-| SVM | 0.7882 | 0.0144 | 0.7800 | 0.6170 |
-| MLP | 0.7858 | 0.0262 | 0.8120 | 0.7045 |
-| KNN | 0.7759 | 0.0155 | 0.7417 | 0.6091 |
-| Logistic Regression | 0.7593 | 0.0294 | 0.8086 | 0.6458 |
-| Dummy | 0.5000 | 0.0000 | 0.5000 | 0.3000 |
+1. Download the UCI dataset from the source linked above. Prepare a CSV named `UCI_Credit_Card.csv` that includes `ID` and the target column `default.payment.next.month`.
+2. Open `CreditDefaultRisk-2.ipynb` in Google Colab. The setup cell installs the required Python packages.
+3. Mount Google Drive. Place the CSV in `MyDrive/Credit_Risk_Prediction/dataset/`, or use the notebook's upload prompt when the file is not found.
+4. Run the notebook from the beginning through model evaluation and export. Model training, permutation SHAP, and local LLM inference can take substantial time. A GPU is optional for neural training, subject to Colab availability.
+5. Inspect the outputs under `MyDrive/Credit_Risk_Prediction/outputs/uci_primary/`. The deployment bundle is written under `MyDrive/Credit_Risk_Prediction/Credit_Default_Streamlit/`.
 
-Some German models obtained higher holdout scores than Random Forest. Random Forest remains the champion because model selection was performed using training-only cross-validation; selecting a model retrospectively from test performance would leak information from the holdout set.
-
-## Champion models
-
-| Dataset | Champion | CV ROC-AUC | Test ROC-AUC | CV-test gap | Test accuracy | Test MCC |
-|---|---|---:|---:|---:|---:|---:|
-| UCI Credit Card | XGBoost | 0.7888 | 0.7835 | 0.0053 | 0.8208 | 0.4057 |
-| German Credit | Random Forest | 0.7973 | 0.7876 | 0.0097 | 0.7250 | 0.3808 |
-
-The small CV-to-test gaps provide evidence of reasonable generalisation with limited overfitting in the recorded splits. The results also demonstrate that the strongest algorithm is dataset-dependent rather than universal.
-
-## Probability calibration
-
-The German Random Forest is calibrated with sigmoid calibration using stratified cross-validation. Calibration reduced the Brier score from **0.1796** to approximately **0.159–0.160**, indicating that the predicted probabilities became more consistent with observed outcomes. ROC-AUC remained broadly unchanged because calibration improves probability reliability rather than the underlying ranking of applicants.
-
-The calibrated German model is used for operational threshold selection, while the original Random Forest remains the explanation model for SHAP.
-
-## Cost-sensitive decision analysis
-
-### UCI Credit Card: hypothetical scenarios
-
-The UCI dataset does not provide an official error-cost matrix. The notebook therefore reports sensitivity analyses under three hypothetical false-negative to false-positive cost ratios. Thresholds are selected using training-only out-of-fold predictions.
-
-| Assumed FN:FP cost | Selected threshold | Test recall | Test specificity | Test cost per client |
-|---|---:|---:|---:|---:|
-| 2:1 | 0.36 | 0.483 | 0.900 | 0.3065 |
-| 5:1 | 0.15 | 0.797 | 0.592 | 0.5430 |
-| 10:1 | 0.10 | 0.909 | 0.359 | 0.7010 |
-
-As the assumed cost of a missed default increases, the selected threshold falls and recall rises. Because each row applies a different cost ratio, its absolute cost value should not be compared directly with the other scenarios.
-
-### German Credit: documented cost matrix
-
-The documented 5:1 cost matrix produced a training-only out-of-fold threshold of **0.20**, with an out-of-fold cost of **0.501 per applicant**.
-
-| Decision rule | Threshold | Accuracy | Precision | Recall | Specificity | FP | FN | Test cost/applicant |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Raw model, standard | 0.50 | 0.725 | 0.535 | 0.633 | 0.764 | 33 | 22 | 0.715 |
-| Calibrated model, standard | 0.50 | 0.765 | 0.638 | 0.500 | 0.879 | 17 | 30 | 0.835 |
-| **Calibrated, cost-optimised** | **0.20** | 0.620 | 0.431 | **0.833** | 0.529 | 66 | **10** | **0.580** |
-
-Lowering the calibrated threshold from 0.50 to 0.20 increased default recall from 0.500 to 0.833 and reduced false negatives from 30 to 10. This benefit came with more false positives and lower accuracy. The appropriate threshold therefore depends on whether the institution prioritises missed-default cost, approval precision, or overall classification accuracy.
-
-## SHAP explainability
-
-SHAP is applied independently to each champion model. In the recorded fast-mode run, a stratified sample of up to **500 test observations** is explained using `TreeExplainer`. The notebook produces:
-
-- Global SHAP beeswarm plots
-- Global mean absolute SHAP bar plots
-- Local waterfall explanations
-- Transformed-feature importance tables
-- Grouped source-feature importance tables
-- Ranked local contributions for five example applicants
-
-One-hot encoded features are regrouped into their original source variables before reporting the main global importance rankings.
-
-### Leading grouped features
-
-| Rank | UCI Credit Card | Mean \|SHAP\| | German Credit | Mean \|SHAP\| |
-|---:|---|---:|---|---:|
-| 1 | `PAY_0` | 0.3229 | `checking_status` | 0.1000 |
-| 2 | `SEVERE_DELAY_MONTH_COUNT` | 0.2831 | `savings_status` | 0.0318 |
-| 3 | `DELAY_MONTH_COUNT` | 0.2136 | `credit_history` | 0.0297 |
-| 4 | `CREDIT_HEADROOM` | 0.1929 | `purpose` | 0.0227 |
-| 5 | `BILL_AMT1` | 0.0778 | `duration_years` | 0.0214 |
-
-The UCI model relies mainly on recent and repeated repayment delays, remaining credit capacity, billing exposure, and payment behaviour. The German model is driven primarily by checking-account status, savings, credit history, loan purpose, and repayment duration.
-
-SHAP explains model behaviour rather than causal relationships. Mean absolute SHAP values show the magnitude of model reliance but do not by themselves indicate whether a feature raises or lowers default risk.
-
-## Cross-dataset methodological replication
-
-The ordering of the eight model families across the two datasets achieved **Kendall's tau = 0.643** with **p = 0.031**. This indicates moderately strong, statistically significant agreement in model-family rankings. Tree-based ensembles occupied the leading positions in both experiments, although XGBoost ranked first for UCI and Random Forest ranked first for German Credit.
-
-This analysis evaluates whether the modelling methodology produces similar algorithm rankings; it does not test whether one fitted model transfers between the two datasets.
-
-## Streamlit prototype
-
-The notebook contains a Streamlit application that:
-
-- Allows selection between UCI Credit Card and German Credit
-- Builds input controls from a stored feature schema
-- Displays the selected champion, threshold, and calibration status
-- Returns default probability and the corresponding risk classification
-- Generates a local SHAP contribution chart on request
-- Uses red contributions for increased model output and blue for decreased output
-
-The deployment bundle records:
-
-| Dataset | Decision model | Threshold | Calibrated | Input features |
-|---|---|---:|---|---:|
-| UCI Credit Card | XGBoost | 0.50 | No | 40 |
-| German Credit | Random Forest | 0.20 | Yes | 27 |
-
-The deployment cells expect an existing `credit_models.joblib` bundle in:
-
-```text
-/content/drive/MyDrive/Credit_Default_Streamlit/
-```
-
-They generate `app.py`, run Streamlit on port 8501, verify the local HTTP response, and expose the session temporarily using a Cloudflare Quick Tunnel. The generated `trycloudflare.com` address is temporary and should not be placed in the README as a permanent application URL.
-
-For a self-contained GitHub deployment, export `app.py`, add the code used to build `credit_models.joblib`, and include a pinned `requirements.txt`.
-
-## Output structure
-
-The notebook saves **111 experiment artefacts** to Google Drive:
-
-```text
-/content/drive/MyDrive/Credit_Risk_Prediction/
-├── dataset/
-└── outputs/
-    ├── uci_primary/
-    │   ├── processed/
-    │   ├── models/
-    │   ├── results/
-    │   ├── figures/
-    │   └── shap/
-    ├── german_replication/
-    │   ├── processed/
-    │   ├── models/
-    │   ├── results/
-    │   ├── figures/
-    │   └── shap/
-    └── cross_experiment_comparison/
-```
-
-Saved artefacts include model-ready data, fitted pipelines, cross-validation results, test predictions, classification reports, ROC and PR curves, confusion matrices, calibration figures, threshold-search tables, SHAP outputs, an artefact index, and a JSON reproducibility manifest.
-
-## Running the notebook
-
-The project is designed for **Google Colab**.
-
-1. Open `Credit_Risk_Prediction_UCI_German.ipynb` in Colab.
-2. Place the following files in `/content/drive/MyDrive/Credit_Risk_Prediction/dataset/`:
-   - `UCI_Credit_Card.csv`
-   - `german.data`
-3. If the files are not found, the notebook will open an upload prompt and save the selected file under the required standardised name.
-4. Run the notebook cells in order.
-5. Review the generated artefacts under the Google Drive output folders.
-
-Install missing dependencies in Colab with:
+To run the exported application locally after extracting `credit_risk_streamlit_bundle.zip`:
 
 ```bash
-pip install pandas scikit-learn xgboost lightgbm shap imbalanced-learn joblib scipy matplotlib seaborn streamlit
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-The recorded execution environment used:
-
-| Component | Version |
-|---|---:|
-| Python | 3.13.15 |
-| pandas | 2.2.3 |
-| scikit-learn | 1.6.1 |
-| XGBoost | 3.4.1 |
-| LightGBM | 4.6.0 |
-| SHAP | 0.52.0 |
-
-Model training can take considerable time, particularly for SVM and large hyperparameter searches. The notebook saves fitted pipelines and result files to Google Drive, but rerunning the training cells will train the models again unless explicit loading or caching logic is added.
-
-## Recommended GitHub structure
-
-```text
-credit-risk-prediction/
-├── Credit_Risk_Prediction_UCI_German.ipynb
-├── app.py                         # export from the deployment cell
-├── requirements.txt
-├── README.md
-├── LICENSE
-└── .gitignore
-```
-
-Datasets, research PDFs, generated outputs, temporary tunnel logs, and model binaries should normally be excluded from Git unless their licences and file sizes permit redistribution.
-
-Suggested `.gitignore` entries:
-
-```gitignore
-dataset/
-outputs/
-*.joblib
-*.pkl
-*.log
-.ipynb_checkpoints/
-__pycache__/
-```
+For local Qwen narration, set `ENABLE_LOCAL_LLM=true` in the application environment before launching it. The default template mode avoids the language-model download and associated memory demand.
 
 ## Limitations and responsible use
 
-- Both datasets are historical benchmarks and may not represent current lending populations.
-- German Credit contains only 1,000 observations, increasing uncertainty in model and threshold estimates.
-- The reported search used three-fold fast mode; a final study should repeat the analysis with more folds, more search iterations, and repeated seeds.
-- Test results are based on one stratified split and should be supported with external or temporal validation where possible.
-- The UCI cost scenarios are hypothetical and should not be interpreted as actual institutional costs.
-- The German threshold conclusion depends on the dataset's documented 5:1 cost assumption.
-- Calibration, discrimination, and classification utility measure different properties and should be assessed separately.
-- SHAP values represent model associations, not causal effects.
-- Variables such as sex, marriage, and personal status require explicit fairness and disparate-impact assessment before deployment.
-- The Streamlit application is a demonstration prototype and does not provide production security, monitoring, governance, or audit controls.
+- The data reflects one historical setting in Taiwan. External validity to present-day clients, institutions, and regulatory environments is unknown.
+- The notebook uses a random stratified split. It does not provide a prospective or time-based validation study.
+- The measured cost scenarios are illustrative because actual loan losses and recovery amounts are unavailable.
+- SHAP attributions depend on the fitted model and selected background data. They are associations rather than explanations of causal mechanisms.
+- The subgroup tables are descriptive. A production fairness assessment would require a defined policy, appropriate protected-attribute governance, uncertainty analysis, and broader validation.
+- The local LLM did not consistently preserve the supplied SHAP directions in the saved evaluation. Its prose requires manual review and must not be treated as a decision rationale.
+- The Streamlit interface is a research demonstration. It has not been validated or governed for operational lending use.
 
-## Conclusion
+## Project outputs
 
-The project demonstrates that credit-risk modelling benefits from combining predictive performance with probability quality, operational decision costs, and transparent explanations. XGBoost was selected for UCI Credit Card with a test ROC-AUC of 0.7835, while Random Forest was selected for German Credit with a test ROC-AUC of 0.7876. Their small cross-validation-to-test gaps suggest reasonable generalisation in the recorded experiments.
-
-SHAP analysis showed that repayment behaviour, delinquency frequency, available credit, liquidity, credit history, loan purpose, and repayment duration were the models' principal drivers. For German Credit, calibration improved probability reliability and a cost-sensitive threshold of 0.20 substantially reduced missed defaults. These gains came with more false alarms, illustrating why model deployment requires an explicit choice of operational priorities rather than reliance on a universal 0.50 threshold.
-
-Overall, the project provides a reproducible framework for comparing dataset-specific credit-risk models while integrating discrimination, calibration, cost sensitivity, explainability, and methodological replication.
-
-## References and data licensing
-
-The notebook contains the complete APA-style literature reference list used for the project. The datasets and research articles are not included in this repository. Users should obtain them from their official sources and comply with their respective licences and terms of use.
-
-## Licence
-
-No software licence is assumed by this README. Add an appropriate licence, such as MIT, Apache-2.0, or another licence consistent with the intended use of the code and third-party dependencies.
+The notebook creates reproducible CSV summaries and figures for data quality, exploratory analysis, model comparison, calibration, threshold sensitivity, subgroup checks, SHAP, and LLM grounding checks. It also exports a ZIP containing the Streamlit application and the trained champion's inference artifacts. These files are generated in Google Drive when the notebook is run and are not assumed to be committed to this repository.
